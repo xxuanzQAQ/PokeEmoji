@@ -1,5 +1,14 @@
 line-length = 120
 target-version = "py311"
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "pyproject.toml",
+    "**/*.toml",
+]
 
 [lint]
 select = ["E", "F", "I", "W", "UP", "B"]
@@ -12,7 +21,7 @@ ignore = ["E501", "B008"]
 [lint.isort]
 combine-as-imports = true
 length-sort = true
-known-first-party = ["gsuid_core"]
+known-first-party = ["gsuid_core", "PokeEmoji"]
 extra-standard-library = ["typing_extensions"]
 section-order = [
     "future",

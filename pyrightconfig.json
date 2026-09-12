@@ -1,0 +1,11 @@
+{
+  "include": ["PokeEmoji"],
+  "exclude": ["**/__pycache__"],
+  "extraPaths": ["../../..", "../../../gsuid_core"],
+  "venvPath": "../../..",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "reportMissingTypeStubs": false,
+  "reportMissingModuleSource": false
+}
