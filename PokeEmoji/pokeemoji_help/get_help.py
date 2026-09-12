@@ -7,13 +7,14 @@ from PIL import Image
 
 from gsuid_core.sv import get_plugin_available_prefix
 from gsuid_core.help.model import PluginSV, PluginHelp
-from gsuid_core.help.draw_new_plugin_help import get_new_help
+from gsuid_core.help.draw_new_plugin_help import ICON_PATH as DEFAULT_ICON_PATH, get_new_help
 
 from ..version import PokeEmoji_version
 from ..utils.resource_path import ICON_PATH
 
 HELP_DATA = Path(__file__).parent / "help.json"
 BANNER_BG = Path(__file__).parent / "texture2d" / "banner_bg.jpg"
+ICON_DIR = Path(__file__).parent / "icon_path"
 
 
 def _banner_bg() -> Image.Image | None:
@@ -76,5 +77,6 @@ async def get_help() -> bytes | str:
         help_mode="dark",
         banner_bg=_banner_bg(),
         banner_sub_text="被戳一戳，就回你一张表情包",
+        icon_path=ICON_DIR if ICON_DIR.is_dir() else DEFAULT_ICON_PATH,
         enable_cache=True,
     )

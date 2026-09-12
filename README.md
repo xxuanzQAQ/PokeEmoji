@@ -110,6 +110,7 @@ WebConsole → 插件配置 → `PokeEmoji`。
 ## 丨致谢与开源声明
 
 - 表情包数据与公开接口：[emoji.wuwa.games](https://emoji.wuwa.games/)；接口服务：[api.emoji.jaspin.top](https://api.emoji.jaspin.top/)
-- 帮助图 banner 与插件图标沿用 [XutheringWavesUID](https://github.com/Loping151/XutheringWavesUID)（[WutheringWavesUID](https://github.com/tyql688/WutheringWavesUID) 的构建版，GPL-3.0-or-later）的素材。
+- 插件图标取自 emoji.wuwa.games 的站点图标。
+- 帮助图的 banner 与命令图标沿用 [XutheringWavesUID](https://github.com/Loping151/XutheringWavesUID)（[WutheringWavesUID](https://github.com/tyql688/WutheringWavesUID) 的构建版，GPL-3.0-or-later）的素材。
 - 感谢呜哇小站提供公开的表情包资源与接口；本插件只是 GsCore 侧的第三方调用方，版权与许可仍归原作者及上游项目所有。
 - 本项目采用 [MIT](./LICENSE) 协议开源，仅供学习与交流使用。
