@@ -53,4 +53,5 @@ GsCore 插件：被**戳一戳**时回一张表情包，数据来自 [emoji.wuwa
 
 - 表情包数据与公开接口：[emoji.wuwa.games](https://emoji.wuwa.games/)
 - 接口服务：[api.emoji.jaspin.top](https://api.emoji.jaspin.top/)
+- 插件图标：取自 [emoji.wuwa.games](https://emoji.wuwa.games/) 的站点图标
 - 感谢 呜哇小站 提供公开的表情包资源与接口。本插件仅作为 GsCore 的第三方调用方，版权与许可仍归原作者及上游项目所有。
