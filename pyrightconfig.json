@@ -1,9 +1,0 @@
-{
-  "include": ["PokeEmoji"],
-  "exclude": ["**/__pycache__"],
-  "extraPaths": ["../../../", "../../../gsuid_core"],
-  "pythonVersion": "3.12",
-  "typeCheckingMode": "basic",
-  "reportMissingTypeStubs": false,
-  "reportMissingModuleSource": false
-}
