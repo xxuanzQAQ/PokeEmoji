@@ -13,6 +13,12 @@ from ..version import PokeEmoji_version
 from ..utils.resource_path import ICON_PATH
 
 HELP_DATA = Path(__file__).parent / "help.json"
+BANNER_BG = Path(__file__).parent / "texture2d" / "banner_bg.jpg"
+
+
+def _banner_bg() -> Image.Image | None:
+    """没带自带 banner 时回落到框架默认底图。"""
+    return Image.open(BANNER_BG) if BANNER_BG.exists() else None
 
 
 def _text(raw: object, field: str) -> str:
@@ -68,6 +74,7 @@ async def get_help() -> bytes | str:
         plugin_help=load_help_data(),
         plugin_prefix=get_plugin_available_prefix("PokeEmoji"),
         help_mode="dark",
+        banner_bg=_banner_bg(),
         banner_sub_text="被戳一戳，就回你一张表情包",
         enable_cache=True,
     )
