@@ -1,0 +1,30 @@
+line-length = 120
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = ["E501", "B008"]
+
+[lint.per-file-ignores]
+# 命令包 __init__.py 通过导入触发注册；不写 __all__。
+"**/__init__.py" = ["F401"]
+
+[lint.isort]
+combine-as-imports = true
+length-sort = true
+known-first-party = ["gsuid_core"]
+extra-standard-library = ["typing_extensions"]
+section-order = [
+    "future",
+    "standard-library",
+    "third-party",
+    "first-party",
+    "local-folder",
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = true
