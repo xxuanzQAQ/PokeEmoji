@@ -1,4 +1,4 @@
-"""取图命令：随机表情 / 表情包分类。"""
+"""取图命令：随机表情 / 表情包列表。"""
 
 from gsuid_core.sv import SV
 from gsuid_core.bot import Bot
@@ -6,86 +6,115 @@ from gsuid_core.models import Event
 from gsuid_core.segment import MessageSegment
 
 from ..pokeemoji_api import (
-    FacetGroup,
-    pick_asset,
-    pick_image_url,
-    resolve_filter,
-    get_facet_groups,
+    FORMAT_WEBP,
+    CharacterItem,
+    EmojiAPIError,
+    describe_error,
+    get_characters,
+    get_random_emoji,
 )
-from ..utils.setting import get_session_filter
-from ..pokeemoji_config.pokeemoji_config import load_settings
+from ..utils.setting import get_session_character
+from ..pokeemoji_config.pokeemoji_config import PokeSettings, load_settings
 
 sv_query = SV("戳表情包")
 
-SORT_ALIASES: dict[str, str] = {
-    "随机": "random",
-    "随机图": "random",
-    "下载榜": "download",
-    "下载最多": "download",
-    "热门": "download",
-    "收藏榜": "favorite",
-    "收藏最多": "favorite",
+# 命令里的格式关键词，解析后覆盖配置里的默认格式
+FORMAT_ALIASES: dict[str, str] = {
+    "webp": FORMAT_WEBP,
+    "原图": "original",
+    "original": "original",
 }
 
-HINT_ENTRIES_PER_GROUP = 20
+
+def split_tokens(text: str) -> list[str]:
+    """把中英文逗号也当分隔符，方便「随机表情 尤诺，webp」这种写法。"""
+    return text.replace("，", " ").replace(",", " ").split()
 
 
-def build_keyword_hint(groups: list[FacetGroup], unknown: str) -> str:
-    lines = [f"没有找到「{unknown}」相关的分类。"]
-    for group in groups[:2]:
-        names = "、".join(entry.name for entry in group.entries[:HINT_ENTRIES_PER_GROUP])
-        if names:
-            lines.append(f"{group.name}：{names}")
-    lines.append("用「表情包分类」可以看全部关键词。")
+def build_character_hint(items: list[CharacterItem], unknown: str) -> str:
+    lines = [f"没有找到角色「{unknown}」。"]
+    if items:
+        names = "、".join(item.name for item in items)
+        lines.append(f"当前可用角色：{names}")
+    lines.append("也可以直接发「表情包列表」查看当前可用的角色。")
     return "\n".join(lines)
+
+
+async def _not_found_message(settings: PokeSettings, character: str) -> str:
+    """404 时区分两种情况：角色不存在，还是这个角色没有当前格式的表情。"""
+    try:
+        items = await get_characters(
+            api_key=settings.api_key,
+            base_url=settings.api_base,
+            image_format=settings.image_format,
+            timeout=settings.request_timeout,
+        )
+    except EmojiAPIError:
+        items = []
+
+    known = any(item.slug == character or item.name == character for item in items)
+    if known:
+        return f"「{character}」暂时没有 {settings.image_format} 格式的表情，换个格式再试试。"
+    return build_character_hint(items, character)
 
 
 @sv_query.on_command("随机表情", block=True)
 async def send_random_emoji(bot: Bot, ev: Event) -> None:
     settings = load_settings()
-    tokens = ev.text.replace("，", " ").replace(",", " ").split()
-    sort_mode = settings.sort_mode
-    filter_key = settings.default_filter
-    has_filter = any(token not in SORT_ALIASES for token in tokens)
-    if not has_filter:
-        filter_key = await get_session_filter(ev, filter_key)
+    image_format = settings.image_format
+    character = ""
 
-    groups = await get_facet_groups(timeout=settings.request_timeout) if has_filter else []
-    for token in tokens:
-        if token in SORT_ALIASES:
-            sort_mode = SORT_ALIASES[token]
+    for token in split_tokens(ev.text):
+        alias = FORMAT_ALIASES.get(token.lower())
+        if alias:
+            image_format = alias
             continue
-
-        resolved = resolve_filter(token, groups)
-        if not resolved:
-            await bot.send(build_keyword_hint(groups, token))
+        if character:
+            await bot.send("一次只能指定一个角色，发「表情包列表」看看可用的角色吧。")
             return
-        filter_key = resolved
+        character = token
 
-    asset = await pick_asset(
-        sort_mode=sort_mode,
-        filter_key=filter_key,
-        size=settings.candidate_size,
-        timeout=settings.request_timeout,
-    )
-    if asset is None:
-        await bot.send("这个分类下暂时没有表情包，换个关键词试试吧。")
+    # 命令里没写角色时，用本会话设置（或全局默认角色）
+    if not character and settings.allow_user_setting:
+        character = await get_session_character(ev, settings.default_character)
+    elif not character:
+        character = settings.default_character
+
+    try:
+        emoji = await get_random_emoji(
+            api_key=settings.api_key,
+            base_url=settings.api_base,
+            character=character,
+            image_format=image_format,
+            timeout=settings.request_timeout,
+        )
+    except EmojiAPIError as exc:
+        if exc.status == 404 and character:
+            await bot.send(await _not_found_message(settings, character))
+            return
+        await bot.send(describe_error(exc))
         return
 
-    await bot.send(MessageSegment.image(pick_image_url(asset, settings.image_format, settings.auto_webp_bytes)))
+    await bot.send(MessageSegment.image(emoji.url))
 
 
-@sv_query.on_fullmatch("表情包分类", block=True)
-async def list_facets(bot: Bot, ev: Event) -> None:
+@sv_query.on_fullmatch(("表情包列表", "表情包分类"), block=True)
+async def list_characters(bot: Bot, ev: Event) -> None:
     settings = load_settings()
-    groups = await get_facet_groups(timeout=settings.request_timeout)
-    if not groups:
-        await bot.send("暂时取不到分类列表，稍后再试试吧。")
+    try:
+        items = await get_characters(
+            api_key=settings.api_key,
+            base_url=settings.api_base,
+            image_format=settings.image_format,
+            timeout=settings.request_timeout,
+        )
+    except EmojiAPIError as exc:
+        await bot.send(describe_error(exc))
         return
 
-    lines = ["可用筛选项（「表情设置 关键词」切换本会话的戳一戳表情）："]
-    for group in groups:
-        names = "、".join(entry.name for entry in group.entries)
-        if names:
-            lines.append(f"{group.name}：{names}")
-    await bot.send("\n".join(lines))
+    if not items:
+        await bot.send("接口暂时没有返回可用的角色，稍后再试试吧。")
+        return
+
+    names = "、".join(item.name for item in items)
+    await bot.send(f"当前可用角色（{len(items)} 个）：\n{names}")

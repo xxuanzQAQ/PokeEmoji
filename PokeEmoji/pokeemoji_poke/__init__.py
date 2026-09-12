@@ -10,9 +10,9 @@ from gsuid_core.models import Event
 from gsuid_core.segment import MessageSegment
 
 from ..utils.meta import meta_str
-from ..pokeemoji_api import pick_asset, pick_image_url
-from ..utils.setting import get_session_filter
-from ..pokeemoji_config.pokeemoji_config import load_settings
+from ..pokeemoji_api import RandomEmoji, EmojiAPIError, get_random_emoji
+from ..utils.setting import get_session_character
+from ..pokeemoji_config.pokeemoji_config import PokeSettings, load_settings
 
 sv_poke = SV("戳一戳表情包")
 
@@ -37,6 +37,16 @@ def _check_cooldown(key: str, seconds: int) -> bool:
     return True
 
 
+async def _fetch(settings: PokeSettings, character: str) -> RandomEmoji:
+    return await get_random_emoji(
+        api_key=settings.api_key,
+        base_url=settings.api_base,
+        character=character,
+        image_format=settings.image_format,
+        timeout=settings.request_timeout,
+    )
+
+
 @sv_poke.on_meta("poke")
 async def send_poke_emoji(bot: Bot, ev: Event) -> None:
     settings = load_settings()
@@ -56,19 +66,24 @@ async def send_poke_emoji(bot: Bot, ev: Event) -> None:
     if not _check_cooldown(session_key, settings.cooldown_seconds):
         return
 
-    # 本会话设置优先；用户没设过或管理员关了自助切换时回落到全局默认
-    filter_key = settings.default_filter
+    # 本会话设置优先；用户没设过或管理员关了自助切换时回落到全局默认角色
+    character = settings.default_character
     if settings.allow_user_setting:
-        filter_key = await get_session_filter(ev, settings.default_filter)
+        character = await get_session_character(ev, settings.default_character)
 
-    asset = await pick_asset(
-        sort_mode=settings.sort_mode,
-        filter_key=filter_key,
-        size=settings.candidate_size,
-        timeout=settings.request_timeout,
-    )
-    if asset is None:
-        logger.warning(f"[PokeEmoji] 没有取到可用表情包: filter={filter_key!r}")
-        return
+    try:
+        emoji = await _fetch(settings, character)
+    except EmojiAPIError as exc:
+        if not (character and exc.status == 404):
+            logger.warning(f"[PokeEmoji] 没有取到可用表情包: character={character!r} {exc}")
+            return
+        # 配置的角色抽不到图（改名 / 没有该格式）时回落随机，别让戳一戳没了反应
+        logger.warning(f"[PokeEmoji] 角色 {character!r} 抽不到图，回落随机角色: {exc}")
+        try:
+            emoji = await _fetch(settings, "")
+        except EmojiAPIError as retry_exc:
+            logger.warning(f"[PokeEmoji] 随机角色也取不到表情包: {retry_exc}")
+            return
 
-    await bot.send(MessageSegment.image(pick_image_url(asset, settings.image_format, settings.auto_webp_bytes)))
+    # 图片是公开直链，不要把 API Key 一起发过去
+    await bot.send(MessageSegment.image(emoji.url))

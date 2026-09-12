@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 
 from gsuid_core.utils.plugins_config.models import (
@@ -8,8 +9,12 @@ from gsuid_core.utils.plugins_config.models import (
 )
 from gsuid_core.utils.plugins_config.gs_config import StringConfig
 
+from ..pokeemoji_api import API_BASE, normalize_format
 from .config_default import CONFIG_DEFAULT
 from ..utils.resource_path import CONFIG_PATH
+
+# 不想把密钥写进配置文件时，可以用环境变量兜底（方便容器化部署）
+API_KEY_ENV = "POKEEMOJI_API_KEY"
 
 CONFIG = StringConfig("PokeEmoji", CONFIG_PATH, CONFIG_DEFAULT)
 
@@ -48,11 +53,10 @@ class PokeSettings:
     allow_user_setting: bool
     probability: int
     cooldown_seconds: int
-    sort_mode: str
-    default_filter: str
-    candidate_size: int
+    api_key: str
+    api_base: str
+    default_character: str
     image_format: str
-    auto_webp_bytes: int
     request_timeout: int
 
 
@@ -63,10 +67,9 @@ def load_settings() -> PokeSettings:
         allow_user_setting=_bool("allow_user_setting", True),
         probability=_bounded_int("poke_probability", 100, 0, 100),
         cooldown_seconds=_bounded_int("cooldown_seconds", 10, 0, 600),
-        sort_mode=_str("sort_mode", "random"),
-        default_filter=_str("default_filter", ""),
-        candidate_size=_bounded_int("candidate_size", 30, 1, 100),
-        image_format=_str("image_format", "auto"),
-        auto_webp_bytes=_bounded_int("auto_webp_bytes", 3145728, 0, 20971520),
+        api_key=_str("api_key", "").strip() or os.environ.get(API_KEY_ENV, "").strip(),
+        api_base=_str("api_base", API_BASE).strip() or API_BASE,
+        default_character=_str("default_character", "").strip(),
+        image_format=normalize_format(_str("image_format", "original")),
         request_timeout=_bounded_int("request_timeout", 20, 1, 120),
     )

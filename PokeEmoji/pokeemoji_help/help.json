@@ -1,35 +1,35 @@
 {
   "取图": {
-    "desc": "随机取一张表情包，可追加分类关键词",
+    "desc": "随机取一张表情包，可指定角色与图片格式",
     "data": [
       {
         "name": "随机表情",
-        "desc": "随机来一张",
+        "desc": "随机角色、随机来一张",
         "eg": "随机表情",
         "need_ck": false,
         "need_sk": false,
         "need_admin": false
       },
       {
-        "name": "分类查询",
-        "desc": "角色 / 画师 / 企划 / 原设等分类筛选",
-        "eg": "随机表情 爱弥斯",
+        "name": "指定角色",
+        "desc": "抽某个角色的表情，可填 slug 或完整名称",
+        "eg": "随机表情 尤诺",
         "need_ck": false,
         "need_sk": false,
         "need_admin": false
       },
       {
-        "name": "榜单取图",
-        "desc": "从下载最多 / 收藏最多的那批里随机",
-        "eg": "随机表情 下载榜",
+        "name": "指定格式",
+        "desc": "取 WebP 或原图，可和角色一起写",
+        "eg": "随机表情 尤诺 webp",
         "need_ck": false,
         "need_sk": false,
         "need_admin": false
       },
       {
-        "name": "表情包分类",
-        "desc": "列出全部可用筛选词",
-        "eg": "表情包分类",
+        "name": "表情包列表",
+        "desc": "列出当前可用的角色",
+        "eg": "表情包列表",
         "need_ck": false,
         "need_sk": false,
         "need_admin": false
@@ -41,15 +41,15 @@
     "data": [
       {
         "name": "表情设置",
-        "desc": "查看本会话当前的戳一戳类别",
+        "desc": "查看本会话当前的戳一戳角色",
         "eg": "表情设置",
         "need_ck": false,
         "need_sk": false,
         "need_admin": false
       },
       {
-        "name": "切换类别",
-        "desc": "把本会话的戳一戳表情切成某个类别",
+        "name": "切换角色",
+        "desc": "把本会话的戳一戳表情切成某个角色",
         "eg": "表情设置 尤诺",
         "need_ck": false,
         "need_sk": false,
@@ -57,7 +57,7 @@
       },
       {
         "name": "清除设置",
-        "desc": "取消本会话设置，回到全局默认筛选",
+        "desc": "取消本会话设置，回到全局默认角色",
         "eg": "表情设置 随机",
         "need_ck": false,
         "need_sk": false,

@@ -5,7 +5,31 @@ from gsuid_core.utils.plugins_config.models import (
     GsBoolConfig,
 )
 
+from ..pokeemoji_api import API_BASE
+
 CONFIG_DEFAULT: dict[str, GSC] = {
+    "api_base": GsStrConfig(
+        "接口地址",
+        "随机表情接口的基础地址，由接口提供方给出；一般无需修改",
+        API_BASE,
+    ),
+    "api_key": GsStrConfig(
+        "API Key",
+        "接口密钥，形如 re_xxx.yyy，以 Bearer 方式放在请求头；留空时改用环境变量 POKEEMOJI_API_KEY",
+        "",
+        secret=True,
+    ),
+    "default_character": GsStrConfig(
+        "默认角色",
+        "默认抽哪个角色的表情，填角色名即可；留空表示随机角色",
+        "",
+    ),
+    "image_format": GsStrConfig(
+        "图片格式",
+        "original 取原图；webp 取 WebP 图（接口不即时转换，webp 不代表一定是动图）",
+        "original",
+        options=["original", "webp"],
+    ),
     "enable_poke": GsBoolConfig(
         "响应戳一戳",
         "被戳一戳时是否自动回复一张表情包",
@@ -18,7 +42,7 @@ CONFIG_DEFAULT: dict[str, GSC] = {
     ),
     "allow_user_setting": GsBoolConfig(
         "允许用户自助切换",
-        "开启后可用「表情设置 尤诺」切换本会话的戳一戳表情；关闭则只认全局默认筛选",
+        "开启后可用「表情设置 尤诺」切换本会话的戳一戳角色；关闭则只认全局默认角色",
         True,
     ),
     "poke_probability": GsIntConfig(
@@ -32,35 +56,6 @@ CONFIG_DEFAULT: dict[str, GSC] = {
         "同一会话两次自动回复之间的最小间隔，0 表示不限制",
         10,
         max_value=600,
-    ),
-    "sort_mode": GsStrConfig(
-        "取图排序",
-        "random 随机 / download 下载最多 / favorite 收藏最多",
-        "random",
-        options=["random", "download", "favorite"],
-    ),
-    "default_filter": GsStrConfig(
-        "默认筛选",
-        "形如 角色/爱弥斯、画师/雾雪；留空表示不筛选",
-        "",
-    ),
-    "candidate_size": GsIntConfig(
-        "候选数量",
-        "每次从接口取回多少张候选，再从中随机挑一张",
-        30,
-        max_value=100,
-    ),
-    "image_format": GsStrConfig(
-        "发送格式",
-        "auto 表示原图超过阈值时改用 webp 预览；original 始终发原图；webp 始终发预览图",
-        "auto",
-        options=["auto", "original", "webp"],
-    ),
-    "auto_webp_bytes": GsIntConfig(
-        "转预览图阈值(字节)",
-        "auto 格式下原图体积超过该值时改用 webp 预览图",
-        3145728,
-        max_value=20971520,
     ),
     "request_timeout": GsIntConfig(
         "接口超时(秒)",

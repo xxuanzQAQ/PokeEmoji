@@ -1,150 +1,226 @@
-"""emoji.wuwa.games 公开接口客户端。
+"""随机表情接口客户端（api.random-emoji.wuwa.games）。
 
-站点前端用的公开只读端点（Halo 插件 api.emoji.jaspin.top）：
+通过 API Key 鉴权，请求头形如 `Authorization: Bearer <KEY>`：
 
-    GET /gallery-feed
-        size   1-100，默认 24
-        sort   random | download | favorite
-        seed   与 cursor 配套，同一次随机分页要带同一个 seed
-        cursor 上一页返回的 nextCursor
-        filter 可重复，形如 角色/爱弥斯、画师/雾雪（分类名见 facetGroups）
-    另有 /archive-catalog、/archive-stats、/packs/{postName} 等端点，本插件只用 gallery-feed。
+    GET <base>/random      随机取一张表情，可指定角色（slug 或完整名称）与格式
+    GET <base>/characters  列出索引里有对应格式表情的角色
 
-接口不支持关键词搜索，只能按 facet 精确筛选，因此这里本地维护分类索引。
+两个端点共用同一个每分钟额度，失败响应是 JSON `{code, message}`，并可能带
+`Retry-After`。这里每个请求只发一次、不自动重试：机器人场景下连续重试只会
+更快把额度打光，是否重试交给调用方按 HTTP 状态码决定。
 """
 
 import time
-import random
+from typing import TypeVar
 
 import httpx
 import msgspec
 
 from gsuid_core.logger import logger
 
-API_BASE = "https://emoji.wuwa.games/apis/api.emoji.jaspin.top/v1alpha1"
-FEED_PATH = "/gallery-feed"
+API_BASE = "https://emoji.wuwa.games/apis/api.random-emoji.wuwa.games/v1alpha1"
+RANDOM_PATH = "/random"
+CHARACTERS_PATH = "/characters"
 USER_AGENT = "GsCore-PokeEmoji/1.0"
-FACET_CACHE_TTL = 6 * 3600
+
+FORMAT_ORIGINAL = "original"
+FORMAT_WEBP = "webp"
+MAX_CHARACTER_LEN = 120
+
+# 角色索引变动很慢（接口侧约 5 分半），缓存一会儿既省额度又省等待
+CHARACTER_CACHE_TTL = 600
+
+T = TypeVar("T")
 
 
-class EmojiAsset(msgspec.Struct, rename="camel"):
-    """gallery-feed 的 items 元素（只声明用得到的字段）。"""
+class EmojiCharacter(msgspec.Struct, rename="camel"):
+    """本次选中角色的标识与显示名。"""
 
-    original_url: str = ""
-    preview_url: str = ""
-    bytes: int = 0
-
-
-class FacetEntry(msgspec.Struct, rename="camel"):
+    slug: str = ""
     name: str = ""
 
 
-class FacetGroup(msgspec.Struct, rename="camel"):
+class RandomEmoji(msgspec.Struct, rename="camel"):
+    """`/random` 的成功响应。"""
+
+    id: str = ""
+    character: EmojiCharacter = msgspec.field(default_factory=EmojiCharacter)
+    url: str = ""
+    format: str = ""
+    animated: bool | None = None
+    source_url: str | None = None
+
+
+class CharacterItem(msgspec.Struct, rename="camel"):
+    """`/characters` 里的一项角色。"""
+
+    slug: str = ""
     name: str = ""
-    entries: list[FacetEntry] = msgspec.field(default_factory=list)
+    count: int = 0
 
 
-class GalleryFeed(msgspec.Struct, rename="camel"):
-    items: list[EmojiAsset] = msgspec.field(default_factory=list)
-    facet_groups: list[FacetGroup] = msgspec.field(default_factory=list)
+class CharacterList(msgspec.Struct, rename="camel"):
+    items: list[CharacterItem] = msgspec.field(default_factory=list)
 
 
-_facet_groups: list[FacetGroup] = []
-_facet_ts: float = 0.0
+class ErrorBody(msgspec.Struct):
+    code: str = ""
+    message: str = ""
 
 
-async def request_feed(
+class EmojiAPIError(Exception):
+    """接口返回非 200，或本地还没法发起请求时的统一错误。
+
+    `status` 为 HTTP 状态码；未发出请求（缺 Key、网络异常、响应无法解析）时为 0。
+    """
+
+    def __init__(
+        self,
+        status: int,
+        code: str = "",
+        message: str = "",
+        retry_after: float | None = None,
+    ) -> None:
+        self.status = status
+        self.code = code
+        self.message = message
+        self.retry_after = retry_after
+        super().__init__(f"HTTP {status} {code}: {message}".strip())
+
+
+def normalize_format(value: str) -> str:
+    """把配置或命令里的格式归一成接口认的 original / webp（值区分大小写）。"""
+    return FORMAT_WEBP if value.strip().lower() == FORMAT_WEBP else FORMAT_ORIGINAL
+
+
+def normalize_character(value: str) -> str:
+    """角色参数去空白；空串表示不指定（对应省略 character 参数）。"""
+    return value.strip()
+
+
+def _decode(raw: bytes, type_: type[T]) -> T:
+    try:
+        return msgspec.json.decode(raw, type=type_)
+    except msgspec.DecodeError as exc:
+        raise EmojiAPIError(0, "BAD_RESPONSE", "接口返回了无法解析的内容") from exc
+
+
+def _error_from(response: httpx.Response) -> EmojiAPIError:
+    retry_after: float | None = None
+    raw_retry = response.headers.get("Retry-After", "").strip()
+    if raw_retry:
+        try:
+            retry_after = float(raw_retry)
+        except ValueError:
+            retry_after = None
+
+    code = ""
+    message = ""
+    try:
+        body = msgspec.json.decode(response.content, type=ErrorBody)
+        code, message = body.code, body.message
+    except msgspec.DecodeError:
+        message = response.text.strip()
+
+    return EmojiAPIError(response.status_code, code, message, retry_after)
+
+
+async def request_json(
+    path: str,
+    params: dict[str, str],
     *,
-    size: int,
-    sort: str,
-    filter_key: str = "",
-    seed: str = "",
-    cursor: str = "",
+    api_key: str,
+    base_url: str = API_BASE,
     timeout: int = 20,
-) -> GalleryFeed:
-    params: dict[str, str] = {"size": str(size), "sort": sort}
-    if filter_key:
-        params["filter"] = filter_key
-    if seed:
-        params["seed"] = seed
-    if cursor:
-        params["cursor"] = cursor
+) -> bytes:
+    """发一次 GET，200 返回原始 body，其余情况抛 EmojiAPIError。"""
+    key = api_key.strip()
+    if not key:
+        raise EmojiAPIError(0, "MISSING_API_KEY", "尚未配置 API Key")
 
-    headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
-    async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
-        response = await client.get(f"{API_BASE}{FEED_PATH}", params=params)
-        response.raise_for_status()
-        return msgspec.json.decode(response.content, type=GalleryFeed)
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {key}",
+        "User-Agent": USER_AGENT,
+    }
+    url = f"{base_url.rstrip('/')}{path}"
+    try:
+        async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
+            response = await client.get(url, params=params)
+    except httpx.HTTPError as exc:
+        raise EmojiAPIError(0, "NETWORK_ERROR", f"请求接口失败: {exc}") from exc
 
+    if response.status_code != 200:
+        error = _error_from(response)
+        logger.debug(f"[PokeEmoji] {path} 返回 {error.status} {error.code}: {error.message}")
+        raise error
 
-async def get_facet_groups(*, timeout: int = 20, force: bool = False) -> list[FacetGroup]:
-    """分类索引（角色/画师/企划/原设），带内存缓存，随 gallery-feed 一起下发。"""
-    global _facet_groups, _facet_ts
-
-    if not force and _facet_groups and time.monotonic() - _facet_ts < FACET_CACHE_TTL:
-        return _facet_groups
-
-    feed = await request_feed(size=1, sort="random", timeout=timeout)
-    if feed.facet_groups:
-        _facet_groups = feed.facet_groups
-        _facet_ts = time.monotonic()
-        logger.info(f"[PokeEmoji] 分类索引已刷新，共 {len(_facet_groups)} 组")
-    return _facet_groups
+    return response.content
 
 
-def resolve_filter(keyword: str, groups: list[FacetGroup]) -> str:
-    """把用户输入解析成接口的 filter 值；无法识别时返回空串。"""
-    text = keyword.strip()
-    if not text:
-        return ""
-
-    group_name, separator, entry_name = text.partition("/")
-    if separator:
-        group_name = group_name.strip()
-        entry_name = entry_name.strip()
-        for group in groups:
-            if group.name == group_name and any(entry.name == entry_name for entry in group.entries):
-                return f"{group_name}/{entry_name}"
-        return ""
-
-    for group in groups:
-        if group.name == text and group.entries:
-            return f"{group.name}/{random.choice(group.entries).name}"
-        for entry in group.entries:
-            if entry.name == text:
-                return f"{group.name}/{entry.name}"
-
-    return ""
-
-
-async def pick_asset(
+async def get_random_emoji(
     *,
-    sort_mode: str,
-    filter_key: str = "",
-    size: int = 30,
+    api_key: str,
+    base_url: str = API_BASE,
+    character: str = "",
+    image_format: str = FORMAT_ORIGINAL,
     timeout: int = 20,
-) -> EmojiAsset | None:
-    feed = await request_feed(
-        size=size,
-        sort=sort_mode,
-        filter_key=filter_key,
-        timeout=timeout,
-    )
-    items = [item for item in feed.items if item.original_url or item.preview_url]
-    if not items:
-        return None
-    return random.choice(items)
+) -> RandomEmoji:
+    """随机取一张表情；指定角色时只在该角色的对应格式里抽。"""
+    name = normalize_character(character)
+    if len(name) > MAX_CHARACTER_LEN:
+        raise EmojiAPIError(400, "INVALID_CHARACTER", f"角色最长为 {MAX_CHARACTER_LEN} 个字符")
+
+    params = {"format": normalize_format(image_format)}
+    if name:
+        params["character"] = name
+
+    raw = await request_json(RANDOM_PATH, params, api_key=api_key, base_url=base_url, timeout=timeout)
+    return _decode(raw, RandomEmoji)
 
 
-def pick_image_url(asset: EmojiAsset, image_format: str, auto_webp_bytes: int) -> str:
-    """选发送用图片地址；auto 下大图退到 webp 预览，避免动图过大发不出去。"""
-    original = asset.original_url or asset.preview_url
-    preview = asset.preview_url or asset.original_url
+_character_cache: dict[tuple[str, str], tuple[float, list[CharacterItem]]] = {}
 
-    if image_format == "original":
-        return original
-    if image_format == "webp":
-        return preview
-    if asset.bytes and asset.bytes > auto_webp_bytes:
-        return preview
-    return original
+
+async def get_characters(
+    *,
+    api_key: str,
+    base_url: str = API_BASE,
+    image_format: str = FORMAT_ORIGINAL,
+    timeout: int = 20,
+    use_cache: bool = True,
+) -> list[CharacterItem]:
+    """列出当前索引里有指定格式表情的角色，带短 TTL 内存缓存。"""
+    fmt = normalize_format(image_format)
+    cache_key = (base_url, fmt)
+    now = time.monotonic()
+
+    cached = _character_cache.get(cache_key)
+    if use_cache and cached and now - cached[0] < CHARACTER_CACHE_TTL:
+        return cached[1]
+
+    raw = await request_json(CHARACTERS_PATH, {"format": fmt}, api_key=api_key, base_url=base_url, timeout=timeout)
+    items = _decode(raw, CharacterList).items
+    _character_cache[cache_key] = (now, items)
+    return items
+
+
+def describe_error(error: EmojiAPIError) -> str:
+    """把接口错误翻成能直接发给用户的短句。"""
+    if error.code == "MISSING_API_KEY":
+        return "还没有配置 API Key，请先在网页控制台的 PokeEmoji 插件配置里填好。"
+    if error.code in ("NETWORK_ERROR", "BAD_RESPONSE"):
+        return "接口暂时连不上，稍后再试试吧。"
+
+    if error.status == 400:
+        return "角色或格式不对：一次只能指定一个角色，角色名有重名或写法有误，换个写法再试试。"
+    if error.status == 401:
+        return "接口鉴权失败：API Key 无效、已过期或已停用，请检查插件配置。"
+    if error.status == 404:
+        return "这个角色暂时没有该格式的表情，换个角色或格式再试试。"
+    if error.status == 429:
+        wait = f"{int(error.retry_after)} 秒" if error.retry_after else "一会儿"
+        return f"这会儿调用太频繁了，等 {wait} 再试。"
+    if error.status == 503:
+        return "接口暂时不可用，稍后再试试吧。"
+    return f"接口返回了异常（HTTP {error.status}），稍后再试试吧。"

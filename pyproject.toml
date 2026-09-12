@@ -2,7 +2,7 @@
 name = "pokeemoji"
 # 与 PokeEmoji/version.py 的 PokeEmoji_version 保持一致，发版时递增并打 tag
 version = "1.0.0"
-description = "戳一戳回复一张表情包，数据来自 emoji.wuwa.games 的公开接口。"
+description = "戳一戳回复一张表情包，数据来自 api.random-emoji.wuwa.games 接口。"
 authors = [{name = "xxuanzQAQ"}]
 dependencies = [
     "httpx>=0.23.0",

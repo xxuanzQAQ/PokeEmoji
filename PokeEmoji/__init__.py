@@ -1,4 +1,4 @@
-"""PokeEmoji：戳一戳回复一张表情包（emoji.wuwa.games 公开接口）。"""
+"""PokeEmoji：戳一戳回复一张表情包（api.random-emoji.wuwa.games）。"""
 
 from gsuid_core.sv import Plugins
 
