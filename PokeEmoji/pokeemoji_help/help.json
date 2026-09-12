@@ -1,0 +1,68 @@
+{
+  "取图": {
+    "desc": "随机取一张表情包，可追加分类关键词",
+    "data": [
+      {
+        "name": "随机表情",
+        "desc": "随机来一张",
+        "eg": "随机表情",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "分类查询",
+        "desc": "角色 / 画师 / 企划 / 原设等分类筛选",
+        "eg": "随机表情 爱弥斯",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "榜单取图",
+        "desc": "从下载最多 / 收藏最多的那批里随机",
+        "eg": "随机表情 下载榜",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "表情包分类",
+        "desc": "列出全部可用筛选词",
+        "eg": "表情包分类",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      }
+    ]
+  },
+  "戳一戳与设置": {
+    "desc": "被戳时自动回一张（元事件，无需指令），下面用来调本会话偏好",
+    "data": [
+      {
+        "name": "表情设置",
+        "desc": "查看本会话当前的戳一戳类别",
+        "eg": "表情设置",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "切换类别",
+        "desc": "把本会话的戳一戳表情切成某个类别",
+        "eg": "表情设置 尤诺",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "清除设置",
+        "desc": "取消本会话设置，回到全局默认筛选",
+        "eg": "表情设置 随机",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      }
+    ]
+  }
+}

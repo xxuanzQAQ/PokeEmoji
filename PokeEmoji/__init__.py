@@ -4,7 +4,7 @@ from gsuid_core.sv import Plugins
 
 Plugins(
     name="PokeEmoji",
-    force_prefix=["戳"],
+    force_prefix=["ww", "WW"],
     allow_empty_prefix=True,
     alias=["pokeemoji", "戳一戳表情"],
 )
