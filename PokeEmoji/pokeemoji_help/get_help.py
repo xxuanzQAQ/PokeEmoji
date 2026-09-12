@@ -1,6 +1,7 @@
 """用框架的 get_new_help 渲染插件帮助图。"""
 
 import json
+from typing import Any, cast
 from pathlib import Path
 
 from PIL import Image
@@ -10,11 +11,23 @@ from gsuid_core.help.model import PluginSV, PluginHelp
 from gsuid_core.help.draw_new_plugin_help import ICON_PATH as DEFAULT_ICON_PATH, get_new_help
 
 from ..version import PokeEmoji_version
-from ..utils.resource_path import ICON_PATH
+from ..utils.resource_path import ICON_PATH, PLUGIN_DIR
 
 HELP_DATA = Path(__file__).parent / "help.json"
 BANNER_BG = Path(__file__).parent / "texture2d" / "banner_bg.jpg"
-ICON_DIR = Path(__file__).parent / "icon_path"
+
+# 命令图标不另存一份，直接从同目录下的 XutheringWavesUID 图标集里取；
+# 键是本插件 help.json 里的命令名，值是 XW 的图标文件名（不含扩展名）。
+XW_ICON_DIR = PLUGIN_DIR.parent / "XutheringWavesUID" / "XutheringWavesUID" / "wutheringwaves_help" / "icon_path"
+COMMAND_ICONS: dict[str, str] = {
+    "随机表情": "抽卡",
+    "指定角色": "角色",
+    "指定格式": "压缩面板图",
+    "表情包列表": "收藏图鉴",
+    "表情设置": "设置体力背景",
+    "切换角色": "切换",
+    "清除设置": "删除",
+}
 
 
 def _banner_bg() -> Image.Image | None:
@@ -34,18 +47,34 @@ def _flag(raw: object, field: str) -> bool:
     return raw
 
 
+def _command_icon(name: str) -> Path | None:
+    """命令图标指向 wwuid 的图标文件；没装 wwuid 时返回 None 交给框架兜底。"""
+    stem = COMMAND_ICONS.get(name)
+    if not stem:
+        return None
+    icon = XW_ICON_DIR / f"{stem}.png"
+    return icon if icon.exists() else None
+
+
 def _plugin_sv(raw: object) -> PluginSV:
     if not isinstance(raw, dict):
         raise ValueError("help.json 的 data 元素必须是对象")
-    return PluginSV(
-        name=_text(raw.get("name"), "name"),
-        desc=_text(raw.get("desc"), "desc"),
-        eg=_text(raw.get("eg"), "eg"),
-        highlight=0,
-        need_ck=_flag(raw.get("need_ck", False), "need_ck"),
-        need_sk=_flag(raw.get("need_sk", False), "need_sk"),
-        need_admin=_flag(raw.get("need_admin", False), "need_admin"),
-    )
+
+    name = _text(raw.get("name"), "name")
+    sv: dict[str, Any] = {
+        "name": name,
+        "desc": _text(raw.get("desc"), "desc"),
+        "eg": _text(raw.get("eg"), "eg"),
+        "highlight": 0,
+        "need_ck": _flag(raw.get("need_ck", False), "need_ck"),
+        "need_sk": _flag(raw.get("need_sk", False), "need_sk"),
+        "need_admin": _flag(raw.get("need_admin", False), "need_admin"),
+    }
+    # 渲染器支持额外的 icon 键，直接给图标文件路径，省得靠文件名去猜
+    icon = _command_icon(name)
+    if icon is not None:
+        sv["icon"] = str(icon)
+    return cast(PluginSV, sv)
 
 
 def load_help_data() -> dict[str, PluginHelp]:
@@ -77,6 +106,6 @@ async def get_help() -> bytes | str:
         help_mode="dark",
         banner_bg=_banner_bg(),
         banner_sub_text="被戳一戳，就回你一张表情包",
-        icon_path=ICON_DIR if ICON_DIR.is_dir() else DEFAULT_ICON_PATH,
+        icon_path=XW_ICON_DIR if XW_ICON_DIR.is_dir() else DEFAULT_ICON_PATH,
         enable_cache=True,
     )
