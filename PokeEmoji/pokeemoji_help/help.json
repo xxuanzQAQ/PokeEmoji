@@ -56,5 +56,18 @@
         "need_admin": false
       }
     ]
+  },
+  "统计": {
+    "desc": "看看哪个角色最常被戳出来",
+    "data": [
+      {
+        "name": "戳一戳统计",
+        "desc": "按角色排名，显示总次数与每个角色的次数",
+        "eg": "戳一戳统计",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      }
+    ]
   }
 }

@@ -5,6 +5,7 @@ from gsuid_core.bot import Bot
 from gsuid_core.models import Event
 from gsuid_core.segment import MessageSegment
 
+from ..pokeemoji_stat import record_draw
 from ..pokeemoji_source import (
     CharacterItem,
     EmojiSourceError,
@@ -74,6 +75,8 @@ async def send_random_emoji(bot: Bot, ev: Event) -> None:
         return
 
     await bot.send(MessageSegment.image(emoji.image))
+    # 手动抽图跟戳一戳共用一个榜单：接口直链不带角色名时回落到本次指定的角色
+    await record_draw(ev.bot_id, emoji.character or character)
 
 
 @sv_query.on_fullmatch(("表情包列表", "表情包分类"), block=True)

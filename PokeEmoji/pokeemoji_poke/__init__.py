@@ -11,6 +11,7 @@ from gsuid_core.segment import MessageSegment
 
 from ..utils.meta import meta_str
 from ..utils.setting import get_session_character
+from ..pokeemoji_stat import record_draw
 from ..pokeemoji_source import Emoji, SourceOptions, EmojiSourceError, get_random_emoji
 from ..pokeemoji_config.pokeemoji_config import PokeSettings, load_settings
 
@@ -65,6 +66,10 @@ async def send_poke_emoji(bot: Bot, ev: Event) -> None:
     if settings.allow_user_setting:
         character = await get_session_character(ev, settings.default_character)
 
+    # 记到统计里的角色：接口走随机直链时 Emoji 不带角色名，就回落到本次抽的角色；
+    # 角色不存在而回退随机时回落到空串（记成「随机」），不把随机图算到那个人头上
+    stat_character = character
+
     try:
         emoji = await _fetch(settings.source, character)
     except EmojiSourceError as exc:
@@ -73,6 +78,7 @@ async def send_poke_emoji(bot: Bot, ev: Event) -> None:
             logger.warning(f"[PokeEmoji] 没有取到可用表情包: character={character!r} {exc}")
             return
         logger.warning(f"[PokeEmoji] 角色 {character!r} 抽不到图，回落随机角色: {exc}")
+        stat_character = ""
         try:
             emoji = await _fetch(settings.source, "")
         except EmojiSourceError as retry_exc:
@@ -80,3 +86,4 @@ async def send_poke_emoji(bot: Bot, ev: Event) -> None:
             return
 
     await bot.send(MessageSegment.image(emoji.image))
+    await record_draw(ev.bot_id, emoji.character or stat_character)

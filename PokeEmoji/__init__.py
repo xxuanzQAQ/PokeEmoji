@@ -13,6 +13,7 @@ Plugins(
 from . import (  # noqa: E402
     pokeemoji_help,
     pokeemoji_poke,
+    pokeemoji_stat,
     pokeemoji_query,
     pokeemoji_config,
     pokeemoji_source,
