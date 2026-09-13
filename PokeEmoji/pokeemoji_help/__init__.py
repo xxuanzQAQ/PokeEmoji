@@ -13,7 +13,7 @@ from ..utils.resource_path import ICON_PATH
 sv_help = SV("戳表情包帮助")
 
 
-@sv_help.on_fullmatch(("表情包帮助", "帮助"), block=True)
+@sv_help.on_fullmatch("表情包帮助", block=True)
 async def send_help_img(bot: Bot, ev: Event) -> None:
     await bot.send(await get_help())
 
