@@ -20,6 +20,7 @@ class CharacterItem:
     count: int = 0
     local_only: bool = False
     path: Path | None = None  # 本地角色目录；接口索引里的角色为 None
+    role_id: str | None = None  # 接口索引里的角色 id；本地角色为 None
 
 
 @dataclass(frozen=True)

@@ -2,13 +2,15 @@
 
 接口只有两个路由：
 
-    GET <base>/         角色索引：data.roles[] 带 id / name / emojiCount / packCount
-    GET <base>/random   随机取一张；role=角色名或角色 id，format=json 返回 JSON 结果
+    GET <base>/         角色索引：data.roles[] 带 id / name / emojiCount
+    GET <base>/random   随机取一张；role=角色名或角色 id，默认 302 跳到图片直链
 
-响应统一是 `{code, msg, data}`：`code == 0` 才是成功，其它都是业务错误（HTTP 状态
-仍是 200，例如角色不存在时返回 `{"code":1,"msg":"没有匹配的表情"}`），所以除 HTTP
-状态码外还得看 body 里的 code。`role` 支持精确的角色名或索引里的 id，逗号分隔多个
-角色时会在这几个角色里随机。
+取图这一步是**拼直链**（`build_random_url`）：插件不下载图片，也不先取一次 JSON，
+把链接交给协议端/QQ 自己去取，省掉一次中转。只有取角色索引与校验角色才会真的发请求。
+
+索引响应是 `{code, msg, data}`：`code == 0` 才是成功，其它都是业务错误，例如角色不
+存在时返回 HTTP 404 + `{"code":1,"msg":"没有匹配的表情"}`，所以除 HTTP 状态码外还得
+看 body 里的 code。
 """
 
 from __future__ import annotations
@@ -16,13 +18,16 @@ from __future__ import annotations
 import json
 import time
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 
-from .types import Emoji, CharacterItem, EmojiSourceError
+from .types import CharacterItem, EmojiSourceError
 
 DEFAULT_API_BASE = "https://cdn.anyul.cn/emoji-api"
 USER_AGENT = "GsCore-PokeEmoji/1.1"
+INDEX_PATH = "/"
+RANDOM_PATH = "/random"
 
 # 角色索引约 40KB，且站点侧更新很慢（几小时级），缓存一会儿能省下不少流量
 CHARACTER_CACHE_TTL = 600.0
@@ -43,6 +48,7 @@ def _get_client() -> httpx.AsyncClient:
     if _client is None or _client.is_closed:
         _client = httpx.AsyncClient(
             timeout=DEFAULT_TIMEOUT,
+            headers={"Accept": "application/json", "User-Agent": USER_AGENT},
             limits=httpx.Limits(
                 max_connections=MAX_CONNECTIONS,
                 max_keepalive_connections=MAX_KEEPALIVE_CONNECTIONS,
@@ -61,11 +67,6 @@ async def aclose() -> None:
 
 def _endpoint(api_base: str, path: str) -> str:
     return f"{api_base.strip().rstrip('/')}{path}"
-
-
-def _absolute(api_base: str, url: str) -> str:
-    """接口正常返回绝对直链；万一是相对路径就按接口地址补全。"""
-    return str(httpx.URL(_endpoint(api_base, "")).join(url)) if url.startswith("/") else url
 
 
 def _decode(content: bytes) -> dict[str, Any] | None:
@@ -120,7 +121,7 @@ async def fetch_characters(
     if use_cache and cached and now - cached[0] < CHARACTER_CACHE_TTL:
         return cached[1]
 
-    data = await _get_data(_endpoint(api_base, "/"), None, timeout)
+    data = await _get_data(_endpoint(api_base, INDEX_PATH), None, timeout)
     roles = data.get("roles")
     if not isinstance(roles, list):
         raise EmojiSourceError("API_ERROR", "接口的角色索引格式不对")
@@ -133,7 +134,14 @@ async def fetch_characters(
         if not name:
             continue
         count = role.get("emojiCount")
-        items.append(CharacterItem(name=name, count=count if isinstance(count, int) else 0))
+        role_id = str(role.get("id") or "").strip()
+        items.append(
+            CharacterItem(
+                name=name,
+                count=count if isinstance(count, int) else 0,
+                role_id=role_id or None,
+            )
+        )
 
     if not items:
         raise EmojiSourceError("EMPTY", "接口没有返回任何角色")
@@ -142,24 +150,13 @@ async def fetch_characters(
     return items
 
 
-async def fetch_random_emoji(
-    api_base: str = DEFAULT_API_BASE,
-    character: str = "",
-    timeout: float = 10.0,
-) -> Emoji:
-    """随机取一张表情；指定角色时只在该角色里抽。"""
-    params = {"format": "json"}
+def build_random_url(api_base: str = DEFAULT_API_BASE, character: str = "") -> str:
+    """拼一张随机表情的直链，插件这边不发任何请求。
+
+    带上 `_t` 时间戳是为了绕开下游按 URL 做的图片缓存（例如 Core 的 base64 发送方式
+    会缓存「URL → base64」），否则同一个角色的链接会被缓存成同一张图。
+    """
+    params: dict[str, str] = {"_t": str(int(time.time() * 1000))}
     if character:
         params["role"] = character
-
-    data = await _get_data(_endpoint(api_base, "/random"), params, timeout)
-    url = str(data.get("url") or "").strip()
-    if not url:
-        raise EmojiSourceError("API_ERROR", "接口没有返回图片地址")
-
-    return Emoji(
-        source="api",
-        character=str(data.get("role") or character or ""),
-        image=_absolute(api_base, url),
-        name=str(data.get("name") or ""),
-    )
+    return f"{_endpoint(api_base, RANDOM_PATH)}?{urlencode(params)}"
