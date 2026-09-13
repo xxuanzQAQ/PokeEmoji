@@ -5,30 +5,34 @@ from gsuid_core.utils.plugins_config.models import (
     GsBoolConfig,
 )
 
-from ..pokeemoji_api import API_BASE
+from ..pokeemoji_source import DEFAULT_API_BASE, DEFAULT_EMOJI_DIR
 
 CONFIG_DEFAULT: dict[str, GSC] = {
+    "enable_api": GsBoolConfig(
+        "优先用接口",
+        "开启后优先调用随机表情接口；接口不可用或该角色没有图时，自动回落到本地目录",
+        True,
+    ),
     "api_base": GsStrConfig(
         "接口地址",
         "随机表情接口的基础地址，由接口提供方给出；一般无需修改",
-        API_BASE,
+        DEFAULT_API_BASE,
     ),
-    "api_key": GsStrConfig(
-        "API Key",
-        "接口密钥，形如 re_xxx.yyy，以 Bearer 方式放在请求头；留空时改用环境变量 POKEEMOJI_API_KEY",
-        "",
-        secret=True,
+    "emoji_dir": GsStrConfig(
+        "本地表情包目录",
+        "备用图源：本地表情包根目录，一级子目录名即角色名；默认指向 wuwa 表情包爬虫的输出目录",
+        DEFAULT_EMOJI_DIR,
     ),
     "default_character": GsStrConfig(
         "默认角色",
-        "默认抽哪个角色的表情，填角色名即可；留空表示随机角色",
+        "默认抽哪个角色的表情，填角色名即可（如 尤诺）；留空表示随机角色",
         "",
     ),
-    "image_format": GsStrConfig(
-        "图片格式",
-        "original 取原图；webp 取 WebP 图（接口不即时转换，webp 不代表一定是动图）",
-        "original",
-        options=["original", "webp"],
+    "request_timeout": GsIntConfig(
+        "接口超时(秒)",
+        "请求接口的超时时间；超时或被限流都会回落到本地目录",
+        10,
+        max_value=120,
     ),
     "enable_poke": GsBoolConfig(
         "响应戳一戳",
@@ -56,11 +60,5 @@ CONFIG_DEFAULT: dict[str, GSC] = {
         "同一会话两次自动回复之间的最小间隔，0 表示不限制",
         10,
         max_value=600,
-    ),
-    "request_timeout": GsIntConfig(
-        "接口超时(秒)",
-        "请求表情包接口的超时时间",
-        20,
-        max_value=120,
     ),
 }

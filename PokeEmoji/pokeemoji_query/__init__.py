@@ -5,29 +5,27 @@ from gsuid_core.bot import Bot
 from gsuid_core.models import Event
 from gsuid_core.segment import MessageSegment
 
-from ..pokeemoji_api import (
-    FORMAT_WEBP,
+from ..pokeemoji_source import (
     CharacterItem,
-    EmojiAPIError,
+    EmojiSourceError,
     describe_error,
     get_characters,
     get_random_emoji,
 )
-from ..utils.setting import get_session_character
 from ..pokeemoji_config.pokeemoji_config import PokeSettings, load_settings
 
 sv_query = SV("戳表情包")
 
-# 命令里的格式关键词，解析后覆盖配置里的默认格式
-FORMAT_ALIASES: dict[str, str] = {
-    "webp": FORMAT_WEBP,
-    "原图": "original",
-    "original": "original",
-}
+# 角色列表文案末尾的小尾巴：图源来自鸣潮玩家众筹做的免费表情包站
+SITE_TAIL = "图源：呜哇小站 emoji.wuwa.games"
+
+# 接口/本地都只有一份原图，没有 webp/原图之分；旧命令里的格式关键词直接忽略，
+# 免得「随机表情 尤诺 webp」这类写惯了的老命令被当成两个角色报错。
+IGNORED_TOKENS = {"webp", "original", "原图", "gif", "png"}
 
 
 def split_tokens(text: str) -> list[str]:
-    """把中英文逗号也当分隔符，方便「随机表情 尤诺，webp」这种写法。"""
+    """把中英文逗号也当分隔符，方便「随机表情 尤诺, webp」这种写法。"""
     return text.replace("，", " ").replace(",", " ").split()
 
 
@@ -40,81 +38,53 @@ def build_character_hint(items: list[CharacterItem], unknown: str) -> str:
     return "\n".join(lines)
 
 
-async def _not_found_message(settings: PokeSettings, character: str) -> str:
-    """404 时区分两种情况：角色不存在，还是这个角色没有当前格式的表情。"""
-    try:
-        items = await get_characters(
-            api_key=settings.api_key,
-            base_url=settings.api_base,
-            image_format=settings.image_format,
-            timeout=settings.request_timeout,
-        )
-    except EmojiAPIError:
-        items = []
+def _format_character(item: CharacterItem) -> str:
+    """接口里没有、只在本地区有的角色标一下，方便排查兜底来源。"""
+    return f"{item.name}({item.count}·仅本地)" if item.local_only else f"{item.name}({item.count})"
 
-    known = any(item.slug == character or item.name == character for item in items)
-    if known:
-        return f"「{character}」暂时没有 {settings.image_format} 格式的表情，换个格式再试试。"
-    return build_character_hint(items, character)
+
+async def _available_characters(settings: PokeSettings) -> list[CharacterItem]:
+    """取角色列表；接口和本地都取不到时返回空列表，由调用方决定怎么提示。"""
+    try:
+        return await get_characters(settings.source)
+    except EmojiSourceError:
+        return []
 
 
 @sv_query.on_command("随机表情", block=True)
 async def send_random_emoji(bot: Bot, ev: Event) -> None:
     settings = load_settings()
-    image_format = settings.image_format
     character = ""
 
     for token in split_tokens(ev.text):
-        alias = FORMAT_ALIASES.get(token.lower())
-        if alias:
-            image_format = alias
+        if token.lower() in IGNORED_TOKENS:
             continue
         if character:
             await bot.send("一次只能指定一个角色，发「表情包列表」看看可用的角色吧。")
             return
         character = token
 
-    # 命令里没写角色时，用本会话设置（或全局默认角色）
-    if not character and settings.allow_user_setting:
-        character = await get_session_character(ev, settings.default_character)
-    elif not character:
-        character = settings.default_character
-
     try:
-        emoji = await get_random_emoji(
-            api_key=settings.api_key,
-            base_url=settings.api_base,
-            character=character,
-            image_format=image_format,
-            timeout=settings.request_timeout,
-        )
-    except EmojiAPIError as exc:
-        if exc.status == 404 and character:
-            await bot.send(await _not_found_message(settings, character))
+        emoji = await get_random_emoji(settings.source, character)
+    except EmojiSourceError as exc:
+        if exc.kind == "NO_CHARACTER" and character:
+            await bot.send(build_character_hint(await _available_characters(settings), character))
             return
         await bot.send(describe_error(exc))
         return
 
-    await bot.send(MessageSegment.image(emoji.url))
+    await bot.send(MessageSegment.image(emoji.image))
 
 
 @sv_query.on_fullmatch(("表情包列表", "表情包分类"), block=True)
 async def list_characters(bot: Bot, ev: Event) -> None:
     settings = load_settings()
     try:
-        items = await get_characters(
-            api_key=settings.api_key,
-            base_url=settings.api_base,
-            image_format=settings.image_format,
-            timeout=settings.request_timeout,
-        )
-    except EmojiAPIError as exc:
+        items = await get_characters(settings.source)
+    except EmojiSourceError as exc:
         await bot.send(describe_error(exc))
         return
 
-    if not items:
-        await bot.send("接口暂时没有返回可用的角色，稍后再试试吧。")
-        return
-
-    names = "、".join(item.name for item in items)
-    await bot.send(f"当前可用角色（{len(items)} 个）：\n{names}")
+    total = sum(item.count for item in items)
+    names = "、".join(_format_character(item) for item in items)
+    await bot.send(f"当前可用角色（{len(items)} 个，共 {total} 张）：\n{names}\n\n{SITE_TAIL}")

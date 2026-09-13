@@ -22,7 +22,6 @@ XW_ICON_DIR = PLUGIN_DIR.parent / "XutheringWavesUID" / "XutheringWavesUID" / "w
 COMMAND_ICONS: dict[str, str] = {
     "随机表情": "抽卡",
     "指定角色": "角色",
-    "指定格式": "压缩面板图",
     "表情包列表": "收藏图鉴",
     "表情设置": "设置体力背景",
     "切换角色": "切换",

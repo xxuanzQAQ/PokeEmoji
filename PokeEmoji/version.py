@@ -1,1 +1,1 @@
-PokeEmoji_version = "1.0.0"
+PokeEmoji_version = "1.2.0"

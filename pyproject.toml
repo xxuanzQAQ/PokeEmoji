@@ -1,12 +1,11 @@
 [project]
 name = "pokeemoji"
 # 与 PokeEmoji/version.py 的 PokeEmoji_version 保持一致，发版时递增并打 tag
-version = "1.0.0"
-description = "戳一戳回复一张表情包，数据来自 api.random-emoji.wuwa.games 接口。"
+version = "1.2.0"
+description = "戳一戳回复一张表情包，优先随机表情接口，本地图片目录兜底。"
 authors = [{name = "xxuanzQAQ"}]
 dependencies = [
     "httpx>=0.23.0",
-    "msgspec>=0.13.1",
     "pillow>=10.2.0",
 ]
 requires-python = ">=3.11"
