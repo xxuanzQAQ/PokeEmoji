@@ -23,9 +23,10 @@ from urllib.parse import urlencode
 import httpx
 
 from .types import CharacterItem, EmojiSourceError
+from ..version import PokeEmoji_version
 
 DEFAULT_API_BASE = "https://cdn.anyul.cn/emoji-api"
-USER_AGENT = "GsCore-PokeEmoji/1.1"
+USER_AGENT = f"GsCore-PokeEmoji/{PokeEmoji_version}"
 INDEX_PATH = "/"
 RANDOM_PATH = "/random"
 
@@ -75,6 +76,27 @@ def _decode(content: bytes) -> dict[str, Any] | None:
     except ValueError:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _thumbnail_from_role(role: dict[str, Any]) -> str | None:
+    """兼容接口索引里常见的封面字段，缺失时由渲染器显示占位图。"""
+    for key in ("thumbnail", "thumbnailUrl", "cover", "coverUrl", "preview", "previewUrl", "image", "imageUrl", "url"):
+        value = role.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, dict):
+            for nested in ("previewUrl", "thumbnailUrl", "coverUrl", "url", "src"):
+                candidate = value.get(nested)
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate.strip()
+    samples = role.get("samples")
+    if isinstance(samples, list):
+        for sample in samples:
+            if isinstance(sample, dict):
+                candidate = sample.get("previewUrl") or sample.get("fallbackUrl") or sample.get("url")
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate.strip()
+    return None
 
 
 async def _get_data(url: str, params: dict[str, str] | None, timeout: float) -> dict[str, Any]:
@@ -140,6 +162,8 @@ async def fetch_characters(
                 name=name,
                 count=count if isinstance(count, int) else 0,
                 role_id=role_id or None,
+                # 旧版索引只有 id/name/count；此时用随机接口取一张首图作为缩略图。
+                thumbnail=_thumbnail_from_role(role) or build_random_url(api_base, name),
             )
         )
 

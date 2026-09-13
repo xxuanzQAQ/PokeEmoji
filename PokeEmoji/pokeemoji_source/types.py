@@ -14,13 +14,43 @@ _IGNORED_CHARS = str.maketrans("", "", "·・ ._-")
 
 @dataclass(frozen=True)
 class CharacterItem:
-    """一个可选角色；local_only 表示接口索引里没有、只在本地区有。"""
+    """一个可选角色；local_only 表示接口索引里没有、只在本地区有。
+
+    owner 是本地「专属目录」归属的 bot 标识：非 None 时只有这个 bot 能选到它，
+    其他 bot 既看不到也切不进去。
+    """
 
     name: str
     count: int = 0
     local_only: bool = False
     path: Path | None = None  # 本地角色目录；接口索引里的角色为 None
     role_id: str | None = None  # 接口索引里的角色 id；本地角色为 None
+    owner: str | None = None  # 专属目录归属的 bot；公共角色为 None
+    thumbnail: str | Path | None = None  # 列表展示用缩略图（本地首图或接口封面）
+
+
+@dataclass(frozen=True)
+class BotContext:
+    """当前会话所属的 bot：bot_id 是适配器名（onebot 等），bot_self_id 是账号（QQ 号等）。
+
+    本地专属目录用目录名标归属，两个标识都认，方便按账号（推荐）或按适配器归档。
+    """
+
+    bot_id: str = ""
+    bot_self_id: str = ""
+
+    @property
+    def ids(self) -> frozenset[str]:
+        return frozenset(id_key(value) for value in (self.bot_id, self.bot_self_id) if value.strip())
+
+    def can_access(self, owner: str | None) -> bool:
+        """公共分类谁都能用；专属分类只认归属者。"""
+        return owner is None or id_key(owner) in self.ids
+
+
+def id_key(value: str) -> str:
+    """bot 标识的比对形式：去空白、忽略大小写。"""
+    return value.strip().casefold()
 
 
 @dataclass(frozen=True)

@@ -4,10 +4,10 @@ from gsuid_core.sv import SV
 from gsuid_core.bot import Bot
 from gsuid_core.models import Event
 
-from ..utils.scope import session_scope
+from ..utils.scope import bot_context, session_scope
 from ..utils.setting import get_session_character
 from ..pokeemoji_query import split_tokens
-from ..pokeemoji_source import EmojiSourceError, get_characters
+from ..pokeemoji_source import BotContext, EmojiSourceError, get_characters, find_foreign_owner
 from ..utils.database.models import PokeEmojiSetting
 from ..pokeemoji_config.pokeemoji_config import PokeSettings, load_settings
 
@@ -21,10 +21,10 @@ def _scope_label(ev: Event) -> str:
     return "本群" if ev.group_id else "你"
 
 
-async def _is_known_character(settings: PokeSettings, character: str) -> bool | None:
+async def _is_known_character(settings: PokeSettings, character: str, bot: BotContext) -> bool | None:
     """接口索引或本地目录里有没有这个名字；两边都取不到时返回 None（不误报）。"""
     try:
-        items = await get_characters(settings.source)
+        items = await get_characters(settings.source, bot)
     except EmojiSourceError:
         return None
     return any(item.name == character for item in items)
@@ -40,6 +40,7 @@ async def set_poke_emoji(bot: Bot, ev: Event) -> None:
     scope_id = session_scope(ev)
     label = _scope_label(ev)
     tokens = split_tokens(ev.text)
+    viewer = bot_context(ev)
 
     if not tokens:
         current = await get_session_character(ev, settings.default_character)
@@ -55,9 +56,15 @@ async def set_poke_emoji(bot: Bot, ev: Event) -> None:
         return
 
     character = tokens[0]
+    # 别的 bot 的专属分类不许切：既不给存，也明确告诉用户为什么
+    foreign = find_foreign_owner(settings.source, character, viewer)
+    if foreign:
+        await bot.send(f"「{character}」是 bot {foreign} 的专属分类，当前 bot 用不了。")
+        return
+
     await PokeEmojiSetting.set_character(ev.bot_id, scope_id, character)
     # 角色列表可能滞后于接口/本地的变动，所以列表里没有也照存，只提醒一句
     note = ""
-    if await _is_known_character(settings, character) is False:
+    if await _is_known_character(settings, character, viewer) is False:
         note = "\n注意：接口与本地目录里暂时都没有这个名字，拼错的话会抽不到图。"
     await bot.send(f"已设置，{label}戳一戳会发「{character}」的表情包。{note}\n发送「表情设置 随机」可恢复默认。")

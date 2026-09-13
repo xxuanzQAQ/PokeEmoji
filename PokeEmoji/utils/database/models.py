@@ -10,8 +10,32 @@ from gsuid_core.utils.database.base_models import (
     with_read_session,
 )
 
-# 统计表是否已确认存在：插件热重载不会重跑框架的 create_all，首次读写前自己补一次
-_stat_table_ensured = False
+# 已确认存在的表：插件热重载不会重跑框架的 create_all，首次读写前自己补一次
+_ensured_tables: set[str] = set()
+
+
+async def _ensure_table(model: type[BaseBotIDModel]) -> None:
+    """首次读写前确保这张表存在。
+
+    框架的 create_all 在 core 启动时跑，插件单独热重载（或更新完没重启 core）不会重跑；
+    这里做一次针对性建表，避免首次命令直接撞上 `no such table`。
+    """
+    table_name = getattr(model, "__tablename__", model.__name__.lower())
+    if table_name in _ensured_tables:
+        return
+    try:
+        from gsuid_core.utils.database.base_models import engine
+
+        async with engine.begin() as conn:
+            await conn.run_sync(
+                model.metadata.create_all,
+                tables=[model.metadata.tables[table_name]],
+                checkfirst=True,
+            )
+    except Exception as exc:
+        logger.warning(f"[PokeEmoji] 数据表 {table_name} 检查失败: {exc}")
+        return
+    _ensured_tables.add(table_name)
 
 
 class PokeEmojiSetting(BaseBotIDModel, table=True):
@@ -32,8 +56,13 @@ class PokeEmojiSetting(BaseBotIDModel, table=True):
     )
 
     @classmethod
+    async def get_character(cls, bot_id: str, scope_id: str) -> str:
+        await _ensure_table(cls)
+        return await cls._get_character(bot_id, scope_id)
+
+    @classmethod
     @with_read_session
-    async def get_character(
+    async def _get_character(
         cls,
         session: AsyncSession,
         bot_id: str,
@@ -45,8 +74,13 @@ class PokeEmojiSetting(BaseBotIDModel, table=True):
         return row.character if row else ""
 
     @classmethod
+    async def set_character(cls, bot_id: str, scope_id: str, character: str) -> None:
+        await _ensure_table(cls)
+        await cls._set_character(bot_id, scope_id, character)
+
+    @classmethod
     @with_session
-    async def set_character(
+    async def _set_character(
         cls,
         session: AsyncSession,
         bot_id: str,
@@ -79,33 +113,9 @@ class PokeEmojiStat(BaseBotIDModel, table=True):
     count: int = Field(default=0, title="戳一戳次数", sa_column=Column(Integer, nullable=False, server_default="0"))
 
     @classmethod
-    async def ensure_table(cls) -> None:
-        """首次读写前确保表存在。
-
-        框架的 create_all 在 core 启动时跑，插件单独热重载不会重跑；这里做一次
-        针对性建表，让「更新完插件没重启 core」也能照常统计。
-        """
-        global _stat_table_ensured
-        if _stat_table_ensured:
-            return
-        try:
-            from gsuid_core.utils.database.base_models import engine
-
-            async with engine.begin() as conn:
-                # SQLModel 以小写类名为表名；显式写死绕开 stub 对 __tablename__ 的噪音
-                await conn.run_sync(
-                    cls.metadata.create_all,
-                    tables=[cls.metadata.tables["pokeemojistat"]],
-                    checkfirst=True,
-                )
-        except Exception as exc:
-            logger.warning(f"[PokeEmoji] 戳一戳统计表检查失败: {exc}")
-        _stat_table_ensured = True
-
-    @classmethod
     async def add_count(cls, bot_id: str, character: str, delta: int = 1) -> None:
         """给某个角色的计数 +delta；表建好后再进会话，避免在会话里做 DDL。"""
-        await cls.ensure_table()
+        await _ensure_table(cls)
         await cls._add_count(bot_id, character, delta)
 
     @classmethod
@@ -140,7 +150,7 @@ class PokeEmojiStat(BaseBotIDModel, table=True):
     @classmethod
     async def get_counters(cls) -> list[tuple[str, int]]:
         """全部 (角色, 次数)；跨 bot / 同一角色的写法差异交给调用方合并。"""
-        await cls.ensure_table()
+        await _ensure_table(cls)
         return await cls._get_counters()
 
     @classmethod

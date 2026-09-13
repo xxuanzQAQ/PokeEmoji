@@ -16,9 +16,13 @@ from ..utils.resource_path import ICON_PATH, PLUGIN_DIR
 HELP_DATA = Path(__file__).parent / "help.json"
 BANNER_BG = Path(__file__).parent / "texture2d" / "banner_bg.jpg"
 
-# 命令图标不另存一份，直接从同目录下的 XutheringWavesUID 图标集里取；
+# 命令图标不另存一份：装了 XutheringWavesUID 就借用它的图标集，没装则回落到框架自带图标。
 # 键是本插件 help.json 里的命令名，值是 XW 的图标文件名（不含扩展名）。
-XW_ICON_DIR = PLUGIN_DIR.parent / "XutheringWavesUID" / "XutheringWavesUID" / "wutheringwaves_help" / "icon_path"
+XW_ICON_CANDIDATES = (
+    # 常见布局：plugins/XutheringWavesUID/XutheringWavesUID/wutheringwaves_help/icon_path
+    PLUGIN_DIR.parent / "XutheringWavesUID" / "XutheringWavesUID" / "wutheringwaves_help" / "icon_path",
+    PLUGIN_DIR.parent / "XutheringWavesUID" / "wutheringwaves_help" / "icon_path",
+)
 COMMAND_ICONS: dict[str, str] = {
     "随机表情": "抽卡",
     "指定角色": "角色",
@@ -47,12 +51,23 @@ def _flag(raw: object, field: str) -> bool:
     return raw
 
 
+_icon_dir_cache: Path | None = None
+
+
+def icon_dir() -> Path:
+    """命令图标的搜索目录：优先 XW 图标集，找不到就回落到框架默认图标目录。"""
+    global _icon_dir_cache
+    if _icon_dir_cache is None:
+        _icon_dir_cache = next((path for path in XW_ICON_CANDIDATES if path.is_dir()), DEFAULT_ICON_PATH)
+    return _icon_dir_cache
+
+
 def _command_icon(name: str) -> Path | None:
-    """命令图标指向 wwuid 的图标文件；没装 wwuid 时返回 None 交给框架兜底。"""
+    """命令图标指向 wwuid 的图标文件；没装 wwuid（或图标缺失）时返回 None 交给框架兜底。"""
     stem = COMMAND_ICONS.get(name)
     if not stem:
         return None
-    icon = XW_ICON_DIR / f"{stem}.png"
+    icon = icon_dir() / f"{stem}.png"
     return icon if icon.exists() else None
 
 
@@ -106,6 +121,6 @@ async def get_help() -> bytes | str:
         help_mode="dark",
         banner_bg=_banner_bg(),
         banner_sub_text="被戳一戳，就回你一张表情包",
-        icon_path=XW_ICON_DIR if XW_ICON_DIR.is_dir() else DEFAULT_ICON_PATH,
+        icon_path=icon_dir(),
         enable_cache=True,
     )

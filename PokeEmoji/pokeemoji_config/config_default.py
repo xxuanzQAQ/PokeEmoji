@@ -20,7 +20,7 @@ CONFIG_DEFAULT: dict[str, GSC] = {
     ),
     "emoji_dir": GsStrConfig(
         "本地表情包目录",
-        "备用图源：本地表情包根目录，一级子目录名即角色名；默认指向 wuwa 表情包爬虫的输出目录",
+        "备用图源（可选）：本地表情包根目录，一级子目录名即角色名；默认在数据目录的 PokeEmoji/emojis 下，留空时读环境变量 POKEEMOJI_EMOJI_DIR",
         DEFAULT_EMOJI_DIR,
     ),
     "default_character": GsStrConfig(

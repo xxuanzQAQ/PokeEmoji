@@ -5,6 +5,7 @@ from gsuid_core.bot import Bot
 from gsuid_core.logger import logger
 from gsuid_core.models import Event
 
+from ..utils.render import render_ranking
 from ..utils.database.models import PokeEmojiStat
 from ..pokeemoji_source.types import name_key
 
@@ -72,4 +73,6 @@ async def show_poke_stat(bot: Bot, ev: Event) -> None:
         await bot.send("读取戳一戳统计失败，稍后再试试吧。")
         return
 
-    await bot.send(format_ranking(rows))
+    from gsuid_core.segment import MessageSegment
+
+    await bot.send(MessageSegment.image(await render_ranking(rows, max_rows=MAX_ROWS)))

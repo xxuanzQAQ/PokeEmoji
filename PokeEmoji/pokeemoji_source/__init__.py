@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 import asyncio
-from dataclasses import dataclass
+from dataclasses import replace, dataclass
 
 from gsuid_core.logger import logger
 
@@ -20,8 +20,10 @@ from .local import DEFAULT_EMOJI_DIR
 from .types import (
     MAX_CHARACTER_LEN,
     Emoji,
+    BotContext,
     CharacterItem,
     EmojiSourceError,
+    name_key,
     normalize_character,
 )
 
@@ -29,6 +31,7 @@ __all__ = [
     "DEFAULT_API_BASE",
     "DEFAULT_EMOJI_DIR",
     "MAX_CHARACTER_LEN",
+    "BotContext",
     "CharacterItem",
     "Emoji",
     "EmojiSourceError",
@@ -36,6 +39,7 @@ __all__ = [
     "aclose",
     "build_random_url",
     "describe_error",
+    "find_foreign_owner",
     "get_characters",
     "get_random_emoji",
     "normalize_character",
@@ -144,11 +148,30 @@ def _matches_role(items: list[CharacterItem], wanted: str) -> bool:
     return any(item.name == wanted or (item.role_id and item.role_id == wanted) for item in items)
 
 
-async def get_random_emoji(options: SourceOptions, character: str = "") -> Emoji:
-    """优先给接口直链；接口不可用、或接口里没有这个角色时回落到本地目录。"""
+async def get_random_emoji(
+    options: SourceOptions,
+    character: str = "",
+    bot: BotContext | None = None,
+) -> Emoji:
+    """优先给接口直链；接口不可用、或接口里没有这个角色时回落到本地目录。
+
+    本地专属分类（目录名是 bot 标识）只有归属的 bot 能用：轮到它自己时直接走本地那份，
+    其他 bot 则完全看不到，跟接口里有没有同名角色无关。
+    """
     name = normalize_character(character)
     if len(name) > MAX_CHARACTER_LEN:
         raise EmojiSourceError("INVALID_CHARACTER", f"角色名最长为 {MAX_CHARACTER_LEN} 个字符")
+
+    if name:
+        try:
+            owned = local.owned_character(options.emoji_dir, name, bot)
+        except EmojiSourceError:
+            owned = None  # 本地读不了就还是走「接口优先、本地兜底」的常规流程
+        if owned is not None:
+            try:
+                return local.random_emoji(options.emoji_dir, name, bot)
+            except EmojiSourceError as exc:
+                raise _combine(None, exc) from exc
 
     api_error: EmojiSourceError | None = None
     if options.enable_api:
@@ -172,12 +195,12 @@ async def get_random_emoji(options: SourceOptions, character: str = "") -> Emoji
                 api_error = EmojiSourceError("NO_CHARACTER", f"接口里没有这个角色（{name}）")
 
     try:
-        return local.random_emoji(options.emoji_dir, name)
+        return local.random_emoji(options.emoji_dir, name, bot)
     except EmojiSourceError as exc:
         raise _combine(api_error, exc) from exc
 
 
-async def get_characters(options: SourceOptions) -> list[CharacterItem]:
+async def get_characters(options: SourceOptions, bot: BotContext | None = None) -> list[CharacterItem]:
     """接口角色索引 ∪ 本地目录；两边都取不到时才抛错。"""
     api_items: list[CharacterItem] = []
     local_items: list[CharacterItem] = []
@@ -195,17 +218,42 @@ async def get_characters(options: SourceOptions) -> list[CharacterItem]:
             _mark_api_up()
 
     try:
-        local_items = local.list_characters(options.emoji_dir)
+        local_items = local.list_characters(options.emoji_dir, bot)
     except EmojiSourceError as exc:
         local_error = exc
+
+    # 自己的专属分类盖掉接口里同名的角色：对归属的 bot 来说，这份才是它该用的
+    owned_names = {item.name for item in local_items if item.owner}
+    api_items = [item for item in api_items if item.name not in owned_names]
 
     if not api_items and not local_items:
         raise _combine(api_error, local_error)
 
+    # 同名角色优先使用本地首图做列表缩略图，避免每次列表命令都下载远程封面。
+    # 角色数量/来源仍以接口索引为准；列表本身不展示数量。
+    local_by_name = {name_key(item.name) or item.name: item for item in local_items}
+    merged = [
+        replace(item, thumbnail=local_by_name[name_key(item.name) or item.name].thumbnail)
+        if (name_key(item.name) or item.name) in local_by_name
+        and local_by_name[name_key(item.name) or item.name].thumbnail is not None
+        else item
+        for item in api_items
+    ]
     api_names = {item.name for item in api_items}
-    merged = list(api_items)
     merged.extend(item for item in local_items if item.name not in api_names)
     return merged
+
+
+def find_foreign_owner(
+    options: SourceOptions,
+    character: str,
+    bot: BotContext | None = None,
+) -> str | None:
+    """这个分类是不是别的 bot 的专属分类；是的话返回归属的 bot 标识。"""
+    try:
+        return local.foreign_owner(options.emoji_dir, normalize_character(character), bot)
+    except EmojiSourceError:
+        return None
 
 
 def describe_error(error: EmojiSourceError) -> str:

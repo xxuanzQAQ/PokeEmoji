@@ -14,7 +14,8 @@ license = {text = "MIT"}
 
 [project.urls]
 Repository = "https://github.com/xxuanzQAQ/PokeEmoji"
-Source = "https://emoji.wuwa.games/"
+Issues = "https://github.com/xxuanzQAQ/PokeEmoji/issues"
+EmojiData = "https://emoji.wuwa.games/"
 
 [tool.pdm]
 distribution = false

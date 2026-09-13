@@ -10,9 +10,10 @@ from gsuid_core.models import Event
 from gsuid_core.segment import MessageSegment
 
 from ..utils.meta import meta_str
+from ..utils.scope import bot_context
 from ..utils.setting import get_session_character
 from ..pokeemoji_stat import record_draw
-from ..pokeemoji_source import Emoji, SourceOptions, EmojiSourceError, get_random_emoji
+from ..pokeemoji_source import Emoji, BotContext, SourceOptions, EmojiSourceError, get_random_emoji
 from ..pokeemoji_config.pokeemoji_config import PokeSettings, load_settings
 
 sv_poke = SV("戳一戳表情包")
@@ -38,8 +39,8 @@ def _check_cooldown(key: str, seconds: int) -> bool:
     return True
 
 
-async def _fetch(options: SourceOptions, character: str) -> Emoji:
-    return await get_random_emoji(options, character)
+async def _fetch(options: SourceOptions, character: str, bot: BotContext) -> Emoji:
+    return await get_random_emoji(options, character, bot)
 
 
 @sv_poke.on_meta("poke")
@@ -47,6 +48,7 @@ async def send_poke_emoji(bot: Bot, ev: Event) -> None:
     settings = load_settings()
     if not settings.enable_poke:
         return
+    viewer = bot_context(ev)
 
     # 私聊只能戳对方，必然是戳机器人；群聊才按 target_id 判断被戳对象
     # 部分平台不给 target_id/bot_self_id，缺字段时放行，避免整条链路失效
@@ -71,7 +73,7 @@ async def send_poke_emoji(bot: Bot, ev: Event) -> None:
     stat_character = character
 
     try:
-        emoji = await _fetch(settings.source, character)
+        emoji = await _fetch(settings.source, character, viewer)
     except EmojiSourceError as exc:
         # 配置的角色不存在时回落随机，别让戳一戳没了反应
         if not (character and exc.kind == "NO_CHARACTER"):
@@ -80,7 +82,7 @@ async def send_poke_emoji(bot: Bot, ev: Event) -> None:
         logger.warning(f"[PokeEmoji] 角色 {character!r} 抽不到图，回落随机角色: {exc}")
         stat_character = ""
         try:
-            emoji = await _fetch(settings.source, "")
+            emoji = await _fetch(settings.source, "", viewer)
         except EmojiSourceError as retry_exc:
             logger.warning(f"[PokeEmoji] 随机角色也取不到表情包: {retry_exc}")
             return

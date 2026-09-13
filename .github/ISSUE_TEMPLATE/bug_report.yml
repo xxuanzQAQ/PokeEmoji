@@ -1,0 +1,59 @@
+name: 🐛 Bug 报告
+description: 戳一戳不回图 / 取不到表情 / 帮助图与列表异常等问题
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提问前请先确认：Core 已经**重启**过（只重载插件不够），并且 WebConsole → 插件配置里能看到 `PokeEmoji`。
+        日志里带 `[PokeEmoji]` 前缀的行能大幅加快定位。
+
+  - type: textarea
+    id: what
+    attributes:
+      label: 现象
+      description: 你发了什么命令 / 被戳之后发生了什么，期望的结果是什么
+      placeholder: |
+        发送 `ww随机表情 尤诺` 后没有任何回复；
+        期望返回一张尤诺的表情包。
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志
+      description: 贴出带 `[PokeEmoji]` 前缀的日志行（QQ 号、路径等隐私信息请先打码）
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: versions
+    attributes:
+      label: 版本信息
+      description: Core 版本、PokeEmoji 版本、协议端（OneBot / NapCat / TRSS-Yunzai 等）
+      placeholder: "Core 1.x.x / PokeEmoji 1.2.0 / NapCat"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: 出问题的是哪一路图源
+      options:
+        - 接口（随机表情接口）
+        - 本地表情包目录兜底
+        - 两路都不行 / 不确定
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: selfcheck
+    attributes:
+      label: 自查
+      options:
+        - label: 安装后已重启 Core（不只是重载插件）
+        - label: 需要直链时已把 OneBot 的「发送图片方式」设为 link
+        - label: 本地兜底目录已按 `emoji_dir/角色名/图片` 放好（若使用本地图源）
